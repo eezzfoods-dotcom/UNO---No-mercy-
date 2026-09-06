@@ -1,0 +1,21 @@
+{
+  "name": "uno-no-mercy-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "UNO No Mercy React client — drop-in game module for the Semma gaming app",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "socket.io-client": "^4.6.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.0.0",
+    "vite": "^5.4.0"
+  }
+}

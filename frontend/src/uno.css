@@ -1,0 +1,17 @@
+/* Only what inline styles cannot express: hover, active and keyframes. */
+
+.uno-card { -webkit-tap-highlight-color: transparent; }
+.uno-card--playable:hover  { transform: translateY(-8px); }
+.uno-card--playable:active { transform: translateY(-3px) scale(0.97); }
+
+.uno-btn:active:not(:disabled) { transform: scale(0.97); }
+
+@keyframes unoPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 107, 53, 0.5); }
+  50%      { box-shadow: 0 0 0 12px rgba(255, 107, 53, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .uno-card, .uno-btn { transition: none !important; }
+  .uno-card--playable:hover, .uno-card--playable:active { transform: none; }
+}

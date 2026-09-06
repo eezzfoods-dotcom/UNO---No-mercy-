@@ -1,0 +1,22 @@
+{
+  "name": "uno-no-mercy-backend",
+  "version": "1.0.0",
+  "description": "UNO No Mercy \u2014 server-authoritative multiplayer game module for the Semma gaming app",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "socket.io": "^4.6.1"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.6.1"
+  }
+}
