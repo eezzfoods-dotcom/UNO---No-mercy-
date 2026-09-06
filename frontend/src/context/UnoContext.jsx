@@ -3,9 +3,13 @@ import { io } from 'socket.io-client';
 
 // One socket for the whole game. In the Semma app you can hand in the app's
 // existing socket instead — see `socket` on the provider props.
+//
+// Undefined means "same origin", which is what a single deployed service wants.
+// Set VITE_UNO_BACKEND_URL when the client and server run on separate hosts
+// (including local dev, where Vite is on 5174 and the server on 3002).
 const DEFAULT_URL = import.meta.env.VITE_UNO_BACKEND_URL
   || import.meta.env.VITE_BACKEND_URL
-  || 'http://localhost:3002';
+  || undefined;
 
 const UnoContext = createContext(null);
 export const useUno = () => useContext(UnoContext);

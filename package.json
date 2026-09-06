@@ -1,0 +1,19 @@
+{
+  "name": "uno-no-mercy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "UNO No Mercy — online multiplayer. One service serves both the socket.io game server and the web client.",
+  "scripts": {
+    "build": "npm --prefix frontend install && npm --prefix frontend run build",
+    "start": "node backend/src/server.js",
+    "dev:server": "node --watch backend/src/server.js",
+    "dev:client": "npm --prefix frontend run dev",
+    "test": "npm --prefix backend install && npm --prefix backend test"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "socket.io": "^4.6.1"
+  },
+  "engines": { "node": ">=18" }
+}

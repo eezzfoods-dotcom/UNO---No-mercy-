@@ -6,6 +6,8 @@
 
 const express = require('express');
 const http = require('http');
+const path = require('path');
+const fs = require('fs');
 const cors = require('cors');
 const { Server } = require('socket.io');
 const registerUnoHandlers = require('./routes/socketHandlers');
@@ -30,6 +32,19 @@ app.use(express.json());
 app.get('/health', (_, res) => res.json({ status: 'ok', game: 'uno-no-mercy', time: new Date().toISOString() }));
 
 registerUnoHandlers(io);
+
+// Serve the built client from this same service when it has been built, so one
+// deployment gives one URL. Without a build, the API still runs on its own.
+const CLIENT_DIR = path.join(__dirname, '..', '..', 'frontend', 'dist');
+if (fs.existsSync(path.join(CLIENT_DIR, 'index.html'))) {
+  app.use(express.static(CLIENT_DIR));
+  // Single-page app: anything that is not a file or an API route renders it.
+  app.get(/^\/(?!health|socket\.io).*/, (_, res) =>
+    res.sendFile(path.join(CLIENT_DIR, 'index.html')));
+  console.log('Serving client from', CLIENT_DIR);
+} else {
+  console.log('No client build found — running API only. Build it with: npm run build');
+}
 
 const PORT = process.env.PORT || 3002;
 server.listen(PORT, () => console.log(`🃏 UNO No Mercy server on port ${PORT}`));

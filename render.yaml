@@ -1,0 +1,12 @@
+# One-click deploy on Render. WebSockets work on the free plan.
+services:
+  - type: web
+    name: uno-no-mercy
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"

@@ -34,14 +34,45 @@ dropped somewhere else unchanged.
     └── src/screens/                 Home · Lobby · Table · Over
 ```
 
-## Running it on its own
+## Play it online
+
+The server also serves the web client, so one deployment gives one URL that
+players open on their own phones.
+
+**Deploy on Render** — free plan, and WebSockets work on it:
+
+1. https://dashboard.render.com/select-repo?type=web
+2. Pick this repo. `render.yaml` fills in the build and start commands.
+3. Create Web Service, wait for the build, open the URL it gives you.
+
+Any host that runs a normal Node process works the same way — Railway, Fly,
+Heroku, a VPS. **Vercel and Netlify will not**, because their serverless
+functions cannot hold a WebSocket open.
+
+| | |
+|---|---|
+| Build | `npm install && npm run build` |
+| Start | `npm start` |
+| Health | `GET /health` |
+| Port | from `$PORT`, default 3002 |
+
+## Running it locally
 
 ```bash
-cd backend  && npm install && npm start   # :3002
-cd frontend && npm install && npm run dev # :5174
+npm install && npm run build && npm start     # one service on :3002
 ```
 
-Open the client in two browsers, create a room in one, join with the 4-letter
+Or with hot reload, in two terminals:
+
+```bash
+npm run dev:server                            # :3002
+npm run dev:client                            # :5174
+```
+
+For the split setup, point the client at the server by putting
+`VITE_UNO_BACKEND_URL=http://localhost:3002` in `frontend/.env`.
+
+Open the URL in two browsers, create a room in one, join with the 4-letter
 code in the other.
 
 ## Wiring it into the Semma app
