@@ -108,32 +108,43 @@ whatever returns the player to the Semma game list.
 
 ## The rules
 
-Standard UNO, plus the No Mercy additions:
+Implemented from Mattel instruction sheet **HVW18** (©2023) — the official
+UNO Show 'em No Mercy rules. Standard UNO matching (colour, number or symbol),
+plus these:
 
 | | |
 |---|---|
 | **Stacking** | Draw cards stack. You may only answer with a card worth **the same or more** — a `+2` can be met with `+2/+4/+6/+10`, but a `+4` cannot be met with a `+2`. Whoever will not stack draws the whole pile. |
 | **Out at 25** | Reach **25 cards** and you are eliminated on the spot. Last player standing wins if nobody goes out first. |
-| **7 — swap** | Play a 7 and swap hands with a player of your choice. |
+| **7 — swap** | Playing a 7 *must* be followed by swapping hands with a player of your choice. |
 | **0 — pass along** | Play a 0 and everyone passes their hand one seat along the direction of play. |
 | **Skip Everyone** | Skips all other players — you take another turn. |
 | **Discard All** | Discard *every* card of that colour from your hand at once. |
-| **Colour Roulette** | Name a colour; the next player draws until they turn one up, and loses their turn. |
-| **Reverse +4** | Flips direction *and* pushes a `+4` onto the stack, handing it to the player who is now next. |
+| **No passing** | With no playable card you draw until you turn one up — and then you must play it. There is no drawing one and passing. |
+| **Colour Roulette** | The **next player** names a colour, then reveals cards until they turn that colour up (wilds never count), keeps every card revealed, and loses their turn. |
+| **Reverse +4** | Flips direction *and* pushes a `+4` onto the stack, handing it to whoever is now next. Heads-up it skips the other player, so the stack comes back to **you** — unless you stack over it. |
 
-The 7-0 rule can be switched off per room from the lobby. Stacking and the
-25-card knockout are always on — they are what makes it No Mercy.
+7-0 is official, but can be switched off per room from the lobby as a house
+rule. Stacking and the 25-card knockout are always on — they are what makes it
+No Mercy. 2–6 players, as on the box.
 
 **Deck — 168 cards**
 
 | Cards | Count |
 |---|---|
 | 0–9, twice per colour | 80 |
-| Skip · Reverse · +2 · Skip Everyone · Discard All, twice per colour | 40 |
-| Wild · +4 · +6 · +10 · Reverse +4 · Colour Roulette, eight each | 48 |
+| Skip · Reverse · +2 · **+4** · Skip Everyone · Discard All, twice per colour | 48 |
+| Wild · Wild +6 · Wild +10 · Reverse +4 · Colour Roulette, eight each | 40 |
 
-Wild Draw cards may be played freely — No Mercy drops the "only if you have no
-matching colour" restriction from standard UNO.
+Note that **+4 is a colour card, not a wild** — the sheet lists it under "Any
+Color Action Card" with Skip, Reverse, +2, Discard All and Skip Everyone. The
+wild draw cards are +6 and +10.
+
+**Optional scoring game.** The winner of a hand takes the value of every card
+left in the other hands — numbers at face value, colour actions 20, wilds 50 —
+plus **250 per player knocked out** that hand. First to **1000** wins. Running
+totals show on the results screen; the game does not end the room at 1000, so
+you can keep playing hands as long as you like.
 
 ## Socket API
 
@@ -152,7 +163,7 @@ Every call takes an ack callback and answers `{ ok: true, ... }` or
 | `uno:start` | — | Host |
 | `uno:play` | `{ cardId, color?, targetIdx? }` | `color` for wilds, `targetIdx` for a 7 |
 | `uno:draw` | — | Takes the stack if one is live, else draws one |
-| `uno:pass` | — | Only after drawing |
+| `uno:choose_color` | `{ color }` | The Colour Roulette victim names their colour |
 | `uno:call_uno` | — | |
 | `uno:catch` | `{ targetIdx }` | +2 to a quiet player on one card |
 | `uno:again` / `uno:close` / `uno:leave` | — | |

@@ -46,7 +46,7 @@ function awaitTurn(views, me, ms = 3000) {
   const deadline = Date.now() + ms;
   return new Promise((res, rej) => {
     const poll = () => {
-      if (views[me] && views[me].yourTurn) return res(views[me]);
+      if (views[me] && (views[me].yourTurn || views[me].chooseRouletteColor)) return res(views[me]);
       if (Date.now() > deadline) return rej(new Error(`player ${me} never got their turn view`));
       setTimeout(poll, 5);
     };
@@ -118,7 +118,9 @@ test('four players run a full game over sockets', async (t) => {
     const view = await awaitTurn(views, me);
 
     let res;
-    if (view.legal.length > 0) {
+    if (view.chooseRouletteColor) {
+      res = await emit(socks[me], 'uno:choose_color', { color: 'red' });
+    } else if (view.legal.length > 0) {
       const others = g.players.map((_, i) => i).filter((i) => i !== me && !g.players[i].eliminated);
       res = await emit(socks[me], 'uno:play', {
         cardId: view.legal[0],
@@ -128,7 +130,7 @@ test('four players run a full game over sockets', async (t) => {
     } else if (view.canDraw) {
       res = await emit(socks[me], 'uno:draw');
     } else {
-      res = await emit(socks[me], 'uno:pass');
+      assert.fail(`player ${me} had no legal action`);
     }
     assert.ok(res.ok, `move ${moves} rejected: ${res.error}`);
     moves++;
@@ -137,6 +139,8 @@ test('four players run a full game over sockets', async (t) => {
   const result = await over;
   assert.ok(result.winner !== null && result.winner !== undefined, 'a winner was announced');
   assert.ok(names.includes(result.winnerName), `winner name is one of the players (${result.winnerName})`);
+  assert.ok(result.score && result.score.total >= 0, 'the hand was scored');
+  assert.strictEqual(result.target, 1000, 'the scoring game runs to 1000');
 
   const final = RM.getRoom(code);
   assert.strictEqual(final.phase, 'ended');

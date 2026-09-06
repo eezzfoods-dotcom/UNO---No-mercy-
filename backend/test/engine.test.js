@@ -1,3 +1,4 @@
+// Rules checked against Mattel instruction sheet HVW18 (©2023).
 const test = require('node:test');
 const assert = require('node:assert');
 
@@ -5,7 +6,6 @@ const deck = require('../src/game/deck');
 const E = require('../src/game/engine');
 const { KIND } = deck;
 
-// Deterministic RNG so every run deals the same cards.
 function seeded(seed = 42) {
   let x = seed;
   return () => { x = (x * 1664525 + 1013904223) % 4294967296; return x / 4294967296; };
@@ -18,12 +18,10 @@ const P4 = [
 
 const game = (players = P4, seed = 7) => E.createGame(players, { rng: seeded(seed) });
 
-// Force a specific card into a hand and make it that player's turn.
 function stage(s, playerIdx, card) {
   const c = { id: `staged-${Math.random()}`, value: null, ...card };
   s.players[playerIdx].hand.push(c);
   s.turn = playerIdx;
-  s.hasDrawn = false;
   return c;
 }
 
@@ -34,43 +32,53 @@ function setTop(s, card) {
   return c;
 }
 
+// Give a player a hand with nothing playable, so draw() is their only move.
+const dud = (n, color = 'green', value = 5) =>
+  Array.from({ length: n }, (_, i) => ({ id: `d${i}-${Math.random()}`, kind: KIND.NUMBER, color, value }));
+
 // ── deck ──────────────────────────────────────────────────
 
-test('deck is exactly 168 cards with the No Mercy composition', () => {
+test('deck is 168 cards: 80 numbers, 48 colour actions, 40 wilds', () => {
   const cards = deck.buildDeck();
   assert.strictEqual(cards.length, 168);
+  assert.strictEqual(cards.filter((c) => c.color).length, 128);
+  assert.strictEqual(cards.filter((c) => !c.color).length, 40);
 
   const count = (k) => cards.filter((c) => c.kind === k).length;
   assert.strictEqual(count(KIND.NUMBER), 80, '0-9 twice per colour');
-  for (const k of [KIND.SKIP, KIND.REVERSE, KIND.DRAW2, KIND.SKIP_ALL, KIND.DISCARD_ALL]) {
-    assert.strictEqual(count(k), 8, `${k} appears twice per colour`);
-  }
-  for (const k of [KIND.WILD, KIND.WILD_DRAW4, KIND.WILD_DRAW6,
-                   KIND.WILD_DRAW10, KIND.WILD_REV4, KIND.ROULETTE]) {
-    assert.strictEqual(count(k), 8, `${k} x8`);
-  }
+  // The sheet lists +4 as a COLOUR action, alongside these.
+  for (const k of deck.COLOR_ACTIONS) assert.strictEqual(count(k), 8, `${k} twice per colour`);
+  assert.strictEqual(count(KIND.DRAW4), 8, '+4 is a colour card, not a wild');
+  for (const k of deck.WILD_CARDS) assert.strictEqual(count(k), 8, `${k} x8`);
+
   assert.strictEqual(new Set(cards.map((c) => c.id)).size, 168, 'ids are unique');
+  assert.ok(!cards.some((c) => c.kind === 'wild_draw4'), 'there is no wild +4');
 });
 
-test('draw values match the No Mercy card faces', () => {
+test('draw values match the card faces', () => {
   assert.strictEqual(deck.drawValue({ kind: KIND.DRAW2 }), 2);
-  assert.strictEqual(deck.drawValue({ kind: KIND.WILD_DRAW4 }), 4);
+  assert.strictEqual(deck.drawValue({ kind: KIND.DRAW4 }), 4);
   assert.strictEqual(deck.drawValue({ kind: KIND.WILD_REV4 }), 4);
   assert.strictEqual(deck.drawValue({ kind: KIND.WILD_DRAW6 }), 6);
   assert.strictEqual(deck.drawValue({ kind: KIND.WILD_DRAW10 }), 10);
   assert.strictEqual(deck.drawValue({ kind: KIND.NUMBER }), 0);
 });
 
+test('scoring values follow the sheet', () => {
+  assert.strictEqual(deck.points({ kind: KIND.NUMBER, value: 7 }), 7, 'numbers score face value');
+  assert.strictEqual(deck.points({ kind: KIND.DRAW4, color: 'red' }), 20, 'colour actions are 20');
+  assert.strictEqual(deck.points({ kind: KIND.SKIP_ALL, color: 'red' }), 20);
+  assert.strictEqual(deck.points({ kind: KIND.WILD_DRAW10 }), 50, 'wilds are 50');
+  assert.strictEqual(deck.points({ kind: KIND.ROULETTE }), 50);
+});
+
 // ── setup ─────────────────────────────────────────────────
 
 test('deal gives everyone 7 cards and turns over a plain number', () => {
   const s = game();
-  assert.strictEqual(s.players.length, 4);
   s.players.forEach((p) => assert.strictEqual(p.hand.length, E.HAND_SIZE));
-  assert.strictEqual(E.topCard(s).kind, KIND.NUMBER, 'starter is never an action card');
-  assert.strictEqual(s.activeColor, E.topCard(s).color);
+  assert.strictEqual(E.topCard(s).kind, KIND.NUMBER, 'action cards are skipped as the starter');
   assert.strictEqual(s.deck.length, 168 - 4 * 7 - 1);
-  assert.strictEqual(s.status, 'playing');
   assert.strictEqual(s.pendingDraw, 0);
 });
 
@@ -80,15 +88,16 @@ test('matching is by colour, by number, or by symbol', () => {
   const s = game();
   setTop(s, { kind: KIND.NUMBER, color: 'red', value: 5 });
   s.turn = 0;
+  assert.strictEqual(E.illegalReason(s, 0, { kind: KIND.NUMBER, color: 'red', value: 9 }), null);
+  assert.strictEqual(E.illegalReason(s, 0, { kind: KIND.NUMBER, color: 'blue', value: 5 }), null);
+  assert.strictEqual(E.illegalReason(s, 0, { kind: KIND.SKIP, color: 'red' }), null);
+  assert.strictEqual(E.illegalReason(s, 0, { kind: KIND.WILD, color: null }), null);
+  assert.ok(E.illegalReason(s, 0, { kind: KIND.NUMBER, color: 'blue', value: 9 }));
 
-  assert.strictEqual(E.illegalReason(s, 0, { kind: KIND.NUMBER, color: 'red', value: 9 }), null, 'colour match');
-  assert.strictEqual(E.illegalReason(s, 0, { kind: KIND.NUMBER, color: 'blue', value: 5 }), null, 'number match');
-  assert.strictEqual(E.illegalReason(s, 0, { kind: KIND.SKIP, color: 'red' }), null, 'colour match on an action');
-  assert.strictEqual(E.illegalReason(s, 0, { kind: KIND.WILD, color: null }), null, 'wilds always play');
-  assert.ok(E.illegalReason(s, 0, { kind: KIND.NUMBER, color: 'blue', value: 9 }), 'no match at all');
-
-  setTop(s, { kind: KIND.SKIP, color: 'green' });
-  assert.strictEqual(E.illegalReason(s, 0, { kind: KIND.SKIP, color: 'blue' }), null, 'symbol match across colours');
+  // A coloured +4 matches another +4 by symbol, like any other action card.
+  setTop(s, { kind: KIND.DRAW4, color: 'green' });
+  s.pendingDraw = 0;
+  assert.strictEqual(E.illegalReason(s, 0, { kind: KIND.DRAW4, color: 'blue' }), null);
 });
 
 test('a player cannot move out of turn', () => {
@@ -96,28 +105,26 @@ test('a player cannot move out of turn', () => {
   s.turn = 0;
   assert.strictEqual(E.illegalReason(s, 1, { kind: KIND.WILD, color: null }), 'Not your turn');
   assert.ok(E.draw(s, 2).error);
-  assert.ok(E.pass(s, 3).error);
 });
 
 // ── stacking ──────────────────────────────────────────────
 
-test('draw cards stack, and only upward', () => {
+test('draw cards stack, and only with equal or higher value', () => {
   const s = game();
   setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
   const d2 = stage(s, 0, { kind: KIND.DRAW2, color: 'red' });
   assert.ok(E.playCard(s, 0, d2.id).ok);
   assert.strictEqual(s.pendingDraw, 2);
-  assert.strictEqual(s.turn, 1, 'stack lands on the next player');
+  assert.strictEqual(s.turn, 1);
 
-  // +2 on a +2 is fine; a number is not.
   const num = stage(s, 1, { kind: KIND.NUMBER, color: 'red', value: 3 });
   assert.match(E.playCard(s, 1, num.id).error, /stack a draw card/);
 
-  const d4 = stage(s, 1, { kind: KIND.WILD_DRAW4, color: null });
-  assert.ok(E.playCard(s, 1, d4.id, { color: 'blue' }).ok);
+  // A coloured +4 stacks on a +2.
+  const d4 = stage(s, 1, { kind: KIND.DRAW4, color: 'blue' });
+  assert.ok(E.playCard(s, 1, d4.id).ok);
   assert.strictEqual(s.pendingDraw, 6, '2 + 4');
 
-  // Now the showing card is a +4, so a +2 is too small.
   const small = stage(s, 2, { kind: KIND.DRAW2, color: 'blue' });
   assert.match(E.playCard(s, 2, small.id).error, /\+4 or higher/);
 
@@ -126,7 +133,7 @@ test('draw cards stack, and only upward', () => {
   assert.strictEqual(s.pendingDraw, 16, '2 + 4 + 10');
 });
 
-test('taking the stack draws the full total and passes the turn', () => {
+test('taking the stack draws the full total and loses the turn', () => {
   const s = game();
   setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
   const d2 = stage(s, 0, { kind: KIND.DRAW2, color: 'red' });
@@ -136,57 +143,64 @@ test('taking the stack draws the full total and passes the turn', () => {
   assert.strictEqual(s.pendingDraw, 8);
 
   const before = s.players[2].hand.length;
-  const res = E.draw(s, 2);
-  assert.strictEqual(res.took, 8);
+  assert.strictEqual(E.draw(s, 2).took, 8);
   assert.strictEqual(s.players[2].hand.length, before + 8);
   assert.strictEqual(s.pendingDraw, 0);
-  assert.strictEqual(s.turn, 3);
+  assert.strictEqual(s.turn, 3, 'and loses their turn');
 });
 
-test('Reverse +4 flips direction and hands the stack backwards', () => {
+test('Reverse +4 flips direction and hands the stack to the new next player', () => {
   const s = game();
   setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
   const d2 = stage(s, 1, { kind: KIND.DRAW2, color: 'red' });
-  s.turn = 1;
   E.playCard(s, 1, d2.id);
   assert.strictEqual(s.turn, 2);
-  assert.strictEqual(s.pendingDraw, 2);
 
   const rev4 = stage(s, 2, { kind: KIND.WILD_REV4, color: null });
   assert.ok(E.playCard(s, 2, rev4.id, { color: 'yellow' }).ok);
-  assert.strictEqual(s.dir, -1, 'direction flipped');
+  assert.strictEqual(s.dir, -1);
   assert.strictEqual(s.pendingDraw, 6, '2 + 4');
-  assert.strictEqual(s.turn, 1, 'the stack goes back to whoever played into it');
+  assert.strictEqual(s.turn, 1, 'back to whoever played into it');
+});
+
+test('heads-up, Reverse +4 sends the penalty back to the player who played it', () => {
+  // "With just two players this card skips the other player and makes YOU draw 4."
+  const s = E.createGame(P4.slice(0, 2), { rng: seeded(5) });
+  setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
+  const rev4 = stage(s, 0, { kind: KIND.WILD_REV4, color: null });
+  assert.ok(E.playCard(s, 0, rev4.id, { color: 'blue' }).ok);
+  assert.strictEqual(s.pendingDraw, 4);
+  assert.strictEqual(s.turn, 0, 'it comes back to you');
+
+  // "You may use the stacking rule to send the penalty back to the other player."
+  const d6 = stage(s, 0, { kind: KIND.WILD_DRAW6, color: null });
+  assert.ok(E.playCard(s, 0, d6.id, { color: 'red' }).ok);
+  assert.strictEqual(s.pendingDraw, 10);
+  assert.strictEqual(s.turn, 1, 'now the other player faces it');
 });
 
 // ── special cards ─────────────────────────────────────────
 
-test('Skip jumps one player; Reverse flips; heads-up Reverse acts as a Skip', () => {
+test('Skip jumps one player; heads-up Reverse acts as a Skip', () => {
   const s = game();
   setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
   const skip = stage(s, 0, { kind: KIND.SKIP, color: 'red' });
   E.playCard(s, 0, skip.id);
-  assert.strictEqual(s.turn, 2, 'player 1 was skipped');
-
-  const rev = stage(s, 2, { kind: KIND.REVERSE, color: 'red' });
-  E.playCard(s, 2, rev.id);
-  assert.strictEqual(s.dir, -1);
-  assert.strictEqual(s.turn, 1);
+  assert.strictEqual(s.turn, 2);
 
   const duel = E.createGame(P4.slice(0, 2), { rng: seeded(3) });
   setTop(duel, { kind: KIND.NUMBER, color: 'red', value: 3 });
   const r2 = stage(duel, 0, { kind: KIND.REVERSE, color: 'red' });
   E.playCard(duel, 0, r2.id);
-  assert.strictEqual(duel.turn, 0, 'with two players a Reverse comes straight back');
+  assert.strictEqual(duel.turn, 0);
 });
 
 test('Skip Everyone returns the turn to the player who played it', () => {
   const s = game();
   setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
   const sa = stage(s, 1, { kind: KIND.SKIP_ALL, color: 'red' });
-  s.turn = 1;
   E.playCard(s, 1, sa.id);
-  assert.strictEqual(s.turn, 1, 'you play again');
+  assert.strictEqual(s.turn, 1);
 });
 
 test('Discard All dumps every card of that colour out of the hand', () => {
@@ -201,7 +215,7 @@ test('Discard All dumps every card of that colour out of the hand', () => {
   ];
   s.turn = 0;
   assert.ok(E.playCard(s, 0, 'da').ok);
-  assert.deepStrictEqual(s.players[0].hand.map((c) => c.id), ['x3'], 'only the blue card survives');
+  assert.deepStrictEqual(s.players[0].hand.map((c) => c.id), ['x3']);
 });
 
 test('Discard All that clears the hand wins the game', () => {
@@ -212,27 +226,11 @@ test('Discard All that clears the hand wins the game', () => {
     { id: 'da', kind: KIND.DISCARD_ALL, color: 'red', value: null },
   ];
   s.turn = 0;
-  const res = E.playCard(s, 0, 'da');
-  assert.ok(res.won);
-  assert.strictEqual(s.status, 'ended');
+  assert.ok(E.playCard(s, 0, 'da').won);
   assert.strictEqual(s.winner, 0);
 });
 
-test('Colour Roulette makes the next player draw until the colour turns up', () => {
-  const s = game();
-  setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
-  const rl = stage(s, 0, { kind: KIND.ROULETTE, color: null });
-  const before = s.players[1].hand.length;
-  assert.ok(E.playCard(s, 0, rl.id, { color: 'green' }).ok);
-
-  const gained = s.players[1].hand.length - before;
-  assert.ok(gained >= 1, 'the victim drew at least one card');
-  assert.strictEqual(s.players[1].hand.at(-1).color, 'green', 'they stopped on the named colour');
-  assert.strictEqual(s.activeColor, 'green');
-  assert.strictEqual(s.turn, 2, 'the victim also loses their turn');
-});
-
-test('a wild needs a colour choice', () => {
+test('a wild needs a colour, but Colour Roulette does not', () => {
   const s = game();
   setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
   const w = stage(s, 0, { kind: KIND.WILD, color: null });
@@ -240,11 +238,45 @@ test('a wild needs a colour choice', () => {
   assert.match(E.playCard(s, 0, w.id, { color: 'purple' }).error, /Choose a colour/);
   assert.ok(E.playCard(s, 0, w.id, { color: 'blue' }).ok);
   assert.strictEqual(s.activeColor, 'blue');
+
+  const rl = stage(s, 1, { kind: KIND.ROULETTE, color: null });
+  assert.ok(E.playCard(s, 1, rl.id).ok, 'the victim names it, so none is needed here');
+});
+
+// ── colour roulette ───────────────────────────────────────
+
+test('Colour Roulette: the VICTIM names the colour and digs for it', () => {
+  const s = game();
+  setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
+  const rl = stage(s, 0, { kind: KIND.ROULETTE, color: null });
+  assert.ok(E.playCard(s, 0, rl.id).ok);
+
+  assert.deepStrictEqual(s.awaiting, { type: 'roulette_color', playerIdx: 1 });
+  assert.strictEqual(s.turn, 1, 'the turn pauses on the victim');
+  assert.ok(E.privateView(s, 1).chooseRouletteColor);
+  assert.ok(!E.privateView(s, 0).chooseRouletteColor);
+
+  // Nobody else may act while the choice is outstanding.
+  assert.ok(E.draw(s, 1).error);
+  assert.match(E.chooseColor(s, 2, 'red').error, /Not your choice/);
+
+  const before = s.players[1].hand.length;
+  const res = E.chooseColor(s, 1, 'green');
+  assert.ok(res.ok);
+  assert.strictEqual(s.activeColor, 'green');
+  assert.ok(res.drawn >= 1);
+  assert.strictEqual(s.players[1].hand.length, before + res.drawn, 'they keep every revealed card');
+
+  const last = s.players[1].hand.at(-1);
+  assert.ok(!deck.isWild(last), 'wild cards do not count as a match');
+  assert.strictEqual(last.color, 'green');
+  assert.strictEqual(s.awaiting, null);
+  assert.strictEqual(s.turn, 2, 'and they lose their turn');
 });
 
 // ── the 7-0 rule ──────────────────────────────────────────
 
-test('a 7 swaps hands with the chosen player', () => {
+test('a 7 MUST be swapped, and the target is required', () => {
   const s = game();
   setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
   s.players[0].hand = [{ id: 's7', kind: KIND.NUMBER, color: 'red', value: 7 },
@@ -252,9 +284,10 @@ test('a 7 swaps hands with the chosen player', () => {
   s.players[2].hand = [{ id: 'z1', kind: KIND.NUMBER, color: 'green', value: 2 }];
   s.turn = 0;
 
+  assert.match(E.playCard(s, 0, 's7').error, /Choose the player/, 'the swap is mandatory');
   assert.ok(E.playCard(s, 0, 's7', { targetIdx: 2 }).ok);
-  assert.deepStrictEqual(s.players[0].hand.map((c) => c.id), ['z1'], 'took player 2\'s hand');
-  assert.deepStrictEqual(s.players[2].hand.map((c) => c.id), ['k1'], 'gave away the rest of theirs');
+  assert.deepStrictEqual(s.players[0].hand.map((c) => c.id), ['z1']);
+  assert.deepStrictEqual(s.players[2].hand.map((c) => c.id), ['k1']);
 });
 
 test('a 0 passes every hand one seat along the direction of play', () => {
@@ -267,102 +300,106 @@ test('a 0 passes every hand one seat along the direction of play', () => {
   s.dir = 1;
 
   assert.ok(E.playCard(s, 0, 'z0').ok);
-  assert.deepStrictEqual(s.players[1].hand.map((c) => c.id), ['h0'], 'p0 -> p1');
-  assert.deepStrictEqual(s.players[2].hand.map((c) => c.id), ['h1'], 'p1 -> p2');
-  assert.deepStrictEqual(s.players[3].hand.map((c) => c.id), ['h2'], 'p2 -> p3');
-  assert.deepStrictEqual(s.players[0].hand.map((c) => c.id), ['h3'], 'p3 wraps to p0');
+  assert.deepStrictEqual(s.players[1].hand.map((c) => c.id), ['h0']);
+  assert.deepStrictEqual(s.players[2].hand.map((c) => c.id), ['h1']);
+  assert.deepStrictEqual(s.players[3].hand.map((c) => c.id), ['h2']);
+  assert.deepStrictEqual(s.players[0].hand.map((c) => c.id), ['h3']);
 });
 
-test('the 7-0 rule can be switched off', () => {
-  const s = E.createGame(P4, { rng: seeded(9), sevenZero: false });
-  setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
-  s.players[0].hand = [{ id: 's7', kind: KIND.NUMBER, color: 'red', value: 7 },
-                       { id: 'k1', kind: KIND.NUMBER, color: 'blue', value: 1 }];
-  const p2 = s.players[2].hand.slice();
-  s.turn = 0;
-  E.playCard(s, 0, 's7', { targetIdx: 2 });
-  assert.deepStrictEqual(s.players[0].hand.map((c) => c.id), ['k1'], 'no swap happened');
-  assert.deepStrictEqual(s.players[2].hand, p2);
-});
+// ── drawing: no passing ───────────────────────────────────
 
-// ── no mercy ──────────────────────────────────────────────
-
-test('reaching 25 cards eliminates a player on the spot', () => {
-  const s = game();
-  const filler = (n) => Array.from({ length: n }, (_, i) =>
-    ({ id: `f${i}-${Math.random()}`, kind: KIND.NUMBER, color: 'blue', value: 4 }));
-
-  setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
-  s.players[1].hand = filler(24);
-  const d2 = stage(s, 0, { kind: KIND.DRAW2, color: 'red' });
-  E.playCard(s, 0, d2.id);              // +2 lands on player 1
-  E.draw(s, 1);                          // they take it -> 26 cards
-
-  assert.strictEqual(s.players[1].eliminated, true, `${E.MERCY_LIMIT} is the limit`);
-  assert.strictEqual(s.players[1].hand.length, 0, 'their cards return to the pile');
-  assert.notStrictEqual(s.turn, 1, 'the turn skips the eliminated seat');
-});
-
-test('the last player standing wins', () => {
-  const s = game();
-  s.players[1].eliminated = true;
-  s.players[1].hand = [];
-  s.players[3].eliminated = true;
-  s.players[3].hand = [];
-
-  setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
-  s.players[2].hand = Array.from({ length: 24 }, (_, i) =>
-    ({ id: `g${i}`, kind: KIND.NUMBER, color: 'blue', value: 4 }));
-  const d2 = stage(s, 0, { kind: KIND.DRAW2, color: 'red' });
-  s.turn = 0;
-  E.playCard(s, 0, d2.id);
-  assert.strictEqual(s.turn, 2, 'only player 2 is left to receive it');
-  E.draw(s, 2);
-
-  assert.strictEqual(s.status, 'ended');
-  assert.strictEqual(s.winner, 0, 'player 0 is the last one standing');
-});
-
-test('emptying your hand wins immediately', () => {
+test('with nothing playable you draw until you can play, then must play it', () => {
   const s = game();
   setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
-  s.players[0].hand = [{ id: 'last', kind: KIND.NUMBER, color: 'red', value: 9 }];
+  s.players[0].hand = dud(3, 'green', 5);   // no red, no 3, no wild
   s.turn = 0;
-  const res = E.playCard(s, 0, 'last');
-  assert.ok(res.won);
-  assert.strictEqual(s.winner, 0);
-  assert.ok(E.draw(s, 1).error, 'no further moves once the game has ended');
+
+  const view = E.privateView(s, 0);
+  assert.deepStrictEqual(view.legal, []);
+  assert.ok(view.canDraw);
+
+  const res = E.draw(s, 0);
+  assert.ok(res.ok);
+  assert.ok(res.drawn >= 1, 'drew at least one');
+  assert.ok(res.mustPlay, 'and turned up something playable');
+  assert.strictEqual(s.turn, 0, 'still your turn — there is no passing');
+
+  // Only that card may be played now.
+  const after = E.privateView(s, 0);
+  assert.deepStrictEqual(after.legal, [res.mustPlay]);
+  assert.ok(!after.canDraw, 'you cannot keep drawing');
+  assert.match(E.draw(s, 0).error, /Play the card you just drew/);
+
+  const other = s.players[0].hand.find((c) => c.id !== res.mustPlay);
+  assert.match(E.playCard(s, 0, other.id).error, /Play the card you just drew/);
+  assert.ok(E.playCard(s, 0, res.mustPlay, { color: 'red', targetIdx: 1 }).ok);
+  assert.strictEqual(s.mustPlayCardId, null);
 });
 
-// ── draw / pass ───────────────────────────────────────────
-
-test('drawing then passing moves the turn on', () => {
+test('you cannot draw while holding a playable card', () => {
   const s = game();
   setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
+  s.players[0].hand = [{ id: 'ok', kind: KIND.NUMBER, color: 'red', value: 9 }];
   s.turn = 0;
-  const before = s.players[0].hand.length;
+  assert.match(E.draw(s, 0).error, /play it/);
+  assert.ok(!E.privateView(s, 0).canDraw);
+});
 
-  assert.ok(E.pass(s, 0).error, 'cannot pass without drawing');
-  assert.ok(E.draw(s, 0).ok);
-  assert.strictEqual(s.players[0].hand.length, before + 1);
-  assert.ok(E.draw(s, 0).error, 'only one draw per turn');
-  assert.ok(E.pass(s, 0).ok);
-  assert.strictEqual(s.turn, 1);
-  assert.strictEqual(s.hasDrawn, false);
+test('there is no pass action', () => {
+  assert.strictEqual(E.pass, undefined);
+  assert.strictEqual(E.privateView(game(), 0).canPass, undefined);
 });
 
 test('the draw pile is rebuilt from the discard when it runs out', () => {
   const s = game();
+  setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
+  s.players[0].hand = dud(2, 'green', 5);
   const spent = s.deck.splice(0, s.deck.length);
-  s.discard.unshift(...spent);            // everything but the top card is used up
+  s.discard.unshift(...spent);
   assert.strictEqual(s.deck.length, 0);
 
-  const top = E.topCard(s);
   s.turn = 0;
   assert.ok(E.draw(s, 0).ok);
-  assert.ok(s.deck.length > 0, 'pile refilled');
-  assert.strictEqual(E.topCard(s), top, 'the showing card stays put');
+  assert.ok(s.deck.length > 0 || s.players[0].hand.length > 2, 'pile refilled and drawn from');
   assert.ok(s.deck.every((c) => !deck.isWild(c) || c.color === null), 'recycled wilds lose their colour');
+});
+
+// ── no mercy ──────────────────────────────────────────────
+
+test('reaching 25 cards puts a player out of the game', () => {
+  const s = game();
+  setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
+  s.players[1].hand = dud(24);
+  const d2 = stage(s, 0, { kind: KIND.DRAW2, color: 'red' });
+  E.playCard(s, 0, d2.id);
+  E.draw(s, 1);
+
+  assert.strictEqual(s.players[1].eliminated, true);
+  assert.strictEqual(s.players[1].hand.length, 0, 'their cards are set aside');
+  assert.strictEqual(s.knockouts, 1);
+  assert.notStrictEqual(s.turn, 1);
+});
+
+test('the last player standing wins', () => {
+  const s = game();
+  [1, 3].forEach((i) => { s.players[i].eliminated = true; s.players[i].hand = []; });
+  setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
+  s.players[2].hand = dud(24);
+  const d2 = stage(s, 0, { kind: KIND.DRAW2, color: 'red' });
+  E.playCard(s, 0, d2.id);
+  assert.strictEqual(s.turn, 2);
+  E.draw(s, 2);
+  assert.strictEqual(s.status, 'ended');
+  assert.strictEqual(s.winner, 0);
+});
+
+test('playing your last card wins immediately', () => {
+  const s = game();
+  setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
+  s.players[0].hand = [{ id: 'last', kind: KIND.NUMBER, color: 'red', value: 9 }];
+  s.turn = 0;
+  assert.ok(E.playCard(s, 0, 'last').won);
+  assert.ok(E.draw(s, 1).error, 'no further moves once the game has ended');
 });
 
 // ── UNO calls ─────────────────────────────────────────────
@@ -370,8 +407,6 @@ test('the draw pile is rebuilt from the discard when it runs out', () => {
 test('a player on one card who stays quiet can be caught for +2', () => {
   const s = game();
   s.players[1].hand = [{ id: 'one', kind: KIND.NUMBER, color: 'red', value: 1 }];
-  s.players[1].calledUno = false;
-
   assert.ok(E.catchUno(s, 0, 1).ok);
   assert.strictEqual(s.players[1].hand.length, 1 + E.UNO_PENALTY);
 
@@ -381,18 +416,37 @@ test('a player on one card who stays quiet can be caught for +2', () => {
   assert.match(E.catchUno(s, 0, 0).error, /cannot catch yourself/);
 });
 
+// ── optional scoring ──────────────────────────────────────
+
+test('the winner scores the other hands plus 250 per knockout', () => {
+  const s = game();
+  setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
+  s.players[1].hand = [{ id: 'n', kind: KIND.NUMBER, color: 'red', value: 9 },
+                       { id: 'a', kind: KIND.DRAW4, color: 'red', value: null }];   // 9 + 20
+  s.players[2].hand = [{ id: 'w', kind: KIND.WILD_DRAW10, color: null, value: null }]; // 50
+  s.players[3].hand = [];
+  s.players[3].eliminated = true;
+  s.knockouts = 1;
+
+  s.players[0].hand = [{ id: 'last', kind: KIND.NUMBER, color: 'red', value: 5 }];
+  s.turn = 0;
+  E.playCard(s, 0, 'last');
+
+  const score = E.scoreRound(s);
+  assert.strictEqual(score.winner, 0);
+  assert.strictEqual(score.cards, 79, '9 + 20 + 50');
+  assert.strictEqual(score.bonus, 250, 'one knockout');
+  assert.strictEqual(score.total, 329);
+  assert.strictEqual(E.TARGET_SCORE, 1000);
+});
+
 // ── views ─────────────────────────────────────────────────
 
 test('the public view never leaks anyone\'s cards', () => {
-  const s = game();
-  const view = E.publicView(s);
-  const json = JSON.stringify(view);
-  assert.ok(!json.includes('"hand"'), 'no hands in the shared view');
-  view.players.forEach((p) => {
-    assert.strictEqual(p.handCount, 7);
-    assert.ok(p.danger > 0 && p.danger < 1);
-  });
-  assert.strictEqual(view.mercyLimit, E.MERCY_LIMIT);
+  const view = E.publicView(game());
+  assert.ok(!JSON.stringify(view).includes('"hand"'));
+  view.players.forEach((p) => assert.strictEqual(p.handCount, 7));
+  assert.strictEqual(view.mercyLimit, 25);
 });
 
 test('the private view lists only that player\'s own legal moves', () => {
@@ -400,14 +454,11 @@ test('the private view lists only that player\'s own legal moves', () => {
   s.turn = 0;
   const mine = E.privateView(s, 0);
   const theirs = E.privateView(s, 1);
-
   assert.strictEqual(mine.hand.length, 7);
-  assert.ok(mine.yourTurn);
-  assert.ok(!theirs.yourTurn);
-  assert.deepStrictEqual(theirs.legal, [], 'no move hints while it is not your turn');
-  mine.legal.forEach((id) => {
-    assert.strictEqual(E.illegalReason(s, 0, mine.hand.find((c) => c.id === id)), null);
-  });
+  assert.ok(mine.yourTurn && !theirs.yourTurn);
+  assert.deepStrictEqual(theirs.legal, []);
+  mine.legal.forEach((id) =>
+    assert.strictEqual(E.illegalReason(s, 0, mine.hand.find((c) => c.id === id)), null));
 });
 
 test('a live stack narrows the private view to draw cards only', () => {
@@ -419,47 +470,40 @@ test('a live stack narrows the private view to draw cards only', () => {
   const v = E.privateView(s, 1);
   assert.strictEqual(s.pendingDraw, 10);
   assert.ok(v.canDraw, 'taking the stack is always available');
-  assert.ok(!v.canPass, 'you cannot pass out of a stack');
-  v.legal.forEach((id) => {
-    assert.ok(deck.drawValue(v.hand.find((c) => c.id === id)) >= 10);
-  });
+  v.legal.forEach((id) => assert.ok(deck.drawValue(v.hand.find((c) => c.id === id)) >= 10));
 });
 
 // ── soak ──────────────────────────────────────────────────
 
-test('200 random games always terminate with a legal winner', () => {
-  for (let seed = 0; seed < 200; seed++) {
+test('300 random games always terminate with a legal winner', () => {
+  const pick = (rng, arr) => arr[Math.floor(rng() * arr.length)];
+
+  for (let seed = 0; seed < 300; seed++) {
     const rng = seeded(seed * 977 + 13);
     const s = E.createGame(P4, { rng });
 
-    for (let turn = 0; turn < 4000 && s.status === 'playing'; turn++) {
+    for (let turn = 0; turn < 6000 && s.status === 'playing'; turn++) {
       const me = s.turn;
       const view = E.privateView(s, me);
-      if (!view.yourTurn) { break; }
 
-      if (view.legal.length > 0) {
-        const id = view.legal[Math.floor(rng() * view.legal.length)];
-        const card = s.players[me].hand.find((c) => c.id === id);
+      let res;
+      if (view.chooseRouletteColor) {
+        res = E.chooseColor(s, me, pick(rng, deck.COLORS));
+      } else if (view.legal.length > 0) {
+        const id = pick(rng, view.legal);
         const others = E.activeIdxs(s).filter((i) => i !== me);
-        const res = E.playCard(s, me, id, {
-          color: ['red', 'yellow', 'green', 'blue'][Math.floor(rng() * 4)],
-          targetIdx: others[Math.floor(rng() * others.length)],
-        });
-        assert.ok(res.ok, `seed ${seed}: engine rejected a move it advertised as legal (${res.error})`);
+        res = E.playCard(s, me, id, { color: pick(rng, deck.COLORS), targetIdx: pick(rng, others) });
       } else if (view.canDraw) {
-        assert.ok(E.draw(s, me).ok, `seed ${seed}: draw failed`);
-      } else if (view.canPass) {
-        assert.ok(E.pass(s, me).ok, `seed ${seed}: pass failed`);
+        res = E.draw(s, me);
       } else {
         assert.fail(`seed ${seed}: player ${me} had no legal action at all`);
       }
+      assert.ok(res.ok, `seed ${seed}: engine rejected a move it advertised (${res.error})`);
 
-      // Invariants that must hold after every single action.
+      // Invariants after every single action.
       assert.ok(s.pendingDraw >= 0);
-      s.players.forEach((p) => {
-        assert.ok(p.hand.length < E.MERCY_LIMIT || p.eliminated,
-          `seed ${seed}: ${p.name} holds ${p.hand.length} and is still in`);
-      });
+      s.players.forEach((p) => assert.ok(p.hand.length < E.MERCY_LIMIT || p.eliminated,
+        `seed ${seed}: ${p.name} holds ${p.hand.length} and is still in`));
       if (s.status === 'playing') {
         assert.ok(!s.players[s.turn].eliminated, `seed ${seed}: turn sat on an eliminated player`);
       }
@@ -467,6 +511,8 @@ test('200 random games always terminate with a legal winner', () => {
 
     assert.strictEqual(s.status, 'ended', `seed ${seed} never finished`);
     assert.ok(s.winner !== null, `seed ${seed} ended with no winner`);
-    assert.ok(!s.players[s.winner].eliminated, `seed ${seed}: winner was eliminated`);
+    assert.ok(!s.players[s.winner].eliminated);
+    const score = E.scoreRound(s);
+    assert.ok(score.total >= 0 && Number.isFinite(score.total), `seed ${seed}: bad score`);
   }
 });

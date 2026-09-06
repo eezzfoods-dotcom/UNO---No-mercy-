@@ -3,6 +3,7 @@ import { Screen, Btn, ACCENT } from '../components/ui';
 
 export default function Over() {
   const { table, result, isHost, again, leave, seat } = useUno();
+  const score = result?.score;
   if (!table) return null;
 
   const winnerIdx = result?.winner ?? table.game?.winner;
@@ -25,9 +26,16 @@ export default function Over() {
         }}>
           {iWon ? 'You win!' : winner ? `${winner.name} wins` : 'Game over'}
         </h2>
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.42)', margin: '0 0 24px' }}>
+        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.42)', margin: '0 0 6px' }}>
           {result?.winnerName ? 'No mercy shown.' : ''}
         </p>
+        {score && (
+          <p style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.55)', margin: '0 0 24px' }}>
+            +{score.total} points — {score.cards} from the other hands
+            {score.bonus > 0 && `, ${score.bonus} for knockouts`}
+            {result.target && ` · first to ${result.target} wins`}
+          </p>
+        )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24, textAlign: 'left' }}>
           {standings.map((s, rank) => (
@@ -40,6 +48,11 @@ export default function Over() {
               <span style={{ fontSize: 19 }}>{s.avatar}</span>
               <span style={{ flex: 1, fontWeight: 600, fontSize: 14.5 }}>{s.name}</span>
               {s.out && <span style={{ fontSize: 11, color: '#E5342F', fontWeight: 700 }}>ELIMINATED</span>}
+              {s.points > 0 && (
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontVariantNumeric: 'tabular-nums' }}>
+                  {s.points} pts
+                </span>
+              )}
               {s.wins > 0 && <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>🏆 {s.wins}</span>}
             </div>
           ))}

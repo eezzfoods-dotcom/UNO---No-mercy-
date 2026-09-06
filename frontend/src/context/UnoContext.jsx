@@ -127,7 +127,7 @@ export function UnoProvider({ children, socket: injected, url = DEFAULT_URL }) {
 
     play: (cardId, opts = {}) => send('uno:play', { cardId, ...opts }),
     draw: () => send('uno:draw'),
-    pass: () => send('uno:pass'),
+    chooseColor: (color) => send('uno:choose_color', { color }),
     callUno: () => send('uno:call_uno'),
     catchUno: (targetIdx) => send('uno:catch', { targetIdx }),
 

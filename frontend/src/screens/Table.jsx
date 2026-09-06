@@ -3,12 +3,12 @@ import { useUno } from '../context/UnoContext';
 import { Card, CardBack, CARD_COLORS } from '../components/Card';
 import { Screen, Btn, ColorPicker, SwapPicker, ACCENT } from '../components/ui';
 
-const WILD_KINDS = new Set([
-  'wild', 'wild_draw4', 'wild_draw6', 'wild_draw10', 'wild_reverse_draw4', 'wild_roulette',
-]);
+// Wilds whose colour the PLAYER names. Colour Roulette is deliberately absent:
+// its colour is named by the victim, on their own turn.
+const PICKS_COLOR = new Set(['wild', 'wild_draw6', 'wild_draw10', 'wild_reverse_draw4']);
 
 export default function Table() {
-  const { table, hand, seat, game, play, draw, pass, callUno, catchUno } = useUno();
+  const { table, hand, seat, game, play, draw, chooseColor, callUno, catchUno } = useUno();
   // A card can need a colour, then a swap target, before it can be sent.
   const [pending, setPending] = useState(null);   // { card, color? }
   const [busy, setBusy] = useState(false);
@@ -30,7 +30,7 @@ export default function Table() {
   // Walk a card through whatever it still needs before sending it to the server.
   async function attempt(card, extra = {}) {
     if (busy) return;
-    if (WILD_KINDS.has(card.kind) && !extra.color) return setPending({ card });
+    if (PICKS_COLOR.has(card.kind) && !extra.color) return setPending({ card });
     if (table.cfg.sevenZero && card.kind === 'number' && card.value === 7
         && extra.targetIdx === undefined && others.some((o) => !game.players[o.i].eliminated)) {
       return setPending({ card, color: extra.color, needsTarget: true });
@@ -124,7 +124,9 @@ export default function Table() {
           )}
 
           <p style={{ fontSize: 13, color: myTurn ? ACCENT : 'rgba(255,255,255,0.42)', fontWeight: myTurn ? 700 : 500, margin: 0 }}>
-            {myTurn ? 'Your turn' : `${table.seats[game.turn]?.name}'s turn`}
+            {hand.chooseRouletteColor ? 'Name a colour — then dig for it'
+              : hand.mustPlayCardId ? 'Play the card you drew'
+              : myTurn ? 'Your turn' : `${table.seats[game.turn]?.name}'s turn`}
           </p>
 
           {game.log?.length > 0 && (
@@ -163,12 +165,9 @@ export default function Table() {
           <div style={{ display: 'flex', gap: 8, paddingBottom: 12 }}>
             <Btn
               onClick={draw} disabled={!myTurn || !hand.canDraw || busy}
-              variant={hand.mustTakeStack ? 'danger' : 'ghost'} style={{ flex: 1 }}
+              variant={hand.mustTakeStack ? 'danger' : 'ghost'} style={{ flex: 2 }}
             >
-              {game.pendingDraw > 0 ? `Take +${game.pendingDraw}` : 'Draw'}
-            </Btn>
-            <Btn onClick={pass} disabled={!hand.canPass || busy} variant="ghost" style={{ flex: 1 }}>
-              Pass
+              {game.pendingDraw > 0 ? `Take +${game.pendingDraw}` : 'Draw until playable'}
             </Btn>
             <Btn
               onClick={callUno}
@@ -181,11 +180,14 @@ export default function Table() {
         </div>
       </div>
 
-      {pending && !pending.color && WILD_KINDS.has(pending.card.kind) && (
+      {pending && !pending.color && PICKS_COLOR.has(pending.card.kind) && (
         <ColorPicker
           onPick={(color) => attempt(pending.card, { color })}
           onCancel={() => setPending(null)}
         />
+      )}
+      {hand.chooseRouletteColor && (
+        <ColorPicker onPick={(color) => chooseColor(color)} />
       )}
       {pending?.needsTarget && (
         <SwapPicker

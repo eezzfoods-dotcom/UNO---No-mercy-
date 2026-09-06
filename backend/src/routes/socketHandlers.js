@@ -22,7 +22,7 @@ function tableState(room) {
     cfg: room.cfg,
     seats: room.players.map((p, i) => ({
       idx: i, name: p.name, avatar: p.avatar,
-      online: p.online !== false, wins: p.wins || 0,
+      online: p.online !== false, wins: p.wins || 0, points: p.points || 0,
     })),
     game: room.game ? engine.publicView(room.game) : null,
   };
@@ -153,9 +153,17 @@ module.exports = function registerUnoHandlers(io) {
         if (room.game.winner !== null && room.players[room.game.winner]) {
           room.players[room.game.winner].wins = (room.players[room.game.winner].wins || 0) + 1;
         }
+        // Optional scoring game: tally the hand and carry running totals.
+        const score = engine.scoreRound(room.game);
+        if (score) {
+          const w = room.players[score.winner];
+          w.points = (w.points || 0) + score.total;
+        }
         io.to(`uno:${room.code}`).emit('uno:over', {
           winner: room.game.winner,
           winnerName: room.game.winner !== null ? room.players[room.game.winner]?.name : null,
+          score,
+          target: engine.TARGET_SCORE,
         });
       }
       cb({ ok: true, ...res });
@@ -168,8 +176,9 @@ module.exports = function registerUnoHandlers(io) {
     socket.on('uno:draw', (_ = {}, cb = () => {}) =>
       move(socket, cb, (g, i) => engine.draw(g, i)));
 
-    socket.on('uno:pass', (_ = {}, cb = () => {}) =>
-      move(socket, cb, (g, i) => engine.pass(g, i)));
+    // The victim of a Colour Roulette names the colour they must dig for.
+    socket.on('uno:choose_color', ({ color } = {}, cb = () => {}) =>
+      move(socket, cb, (g, i) => engine.chooseColor(g, i, color)));
 
     socket.on('uno:call_uno', (_ = {}, cb = () => {}) =>
       move(socket, cb, (g, i) => engine.callUno(g, i)));
