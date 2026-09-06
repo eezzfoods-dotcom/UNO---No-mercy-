@@ -26,7 +26,7 @@ dropped somewhere else unchanged.
 │   ├── src/game/roomManager.js      rooms, seats, rejoining
 │   ├── src/routes/socketHandlers.js the uno:* socket API
 │   ├── src/server.js                standalone server (optional)
-│   └── test/                        31 tests
+│   └── test/                        35 tests
 └── frontend/         React client
     ├── src/UnoGame.jsx              ← the one component you mount
     ├── src/context/UnoContext.jsx   socket + game state
@@ -100,8 +100,9 @@ import './games/uno-no-mercy/frontend/src/uno.css';
 ```
 
 Pass the app's existing `socket` to share one connection. Leave it out and the
-game opens its own using `VITE_UNO_BACKEND_URL` (falling back to
-`VITE_BACKEND_URL`, then `http://localhost:3002`).
+game opens its own to the origin it was served from, which
+`VITE_UNO_BACKEND_URL` overrides when the client and server sit on different
+hosts.
 
 `onExit` renders a "Back to games" button on the home screen — wire it to
 whatever returns the player to the Semma game list.
@@ -162,7 +163,7 @@ Every call takes an ack callback and answers `{ ok: true, ... }` or
 | `uno:kick` | `{ playerIdx }` | Host, lobby only |
 | `uno:start` | — | Host |
 | `uno:play` | `{ cardId, color?, targetIdx? }` | `color` for wilds, `targetIdx` for a 7 |
-| `uno:draw` | — | Takes the stack if one is live, else draws one |
+| `uno:draw` | — | Takes the stack if one is live, else draws until something is playable |
 | `uno:choose_color` | `{ color }` | The Colour Roulette victim names their colour |
 | `uno:call_uno` | — | |
 | `uno:catch` | `{ targetIdx }` | +2 to a quiet player on one card |
@@ -175,7 +176,7 @@ Every call takes an ack callback and answers `{ ok: true, ... }` or
 |---|---|
 | `uno:table` | The shared table — seats, card **counts**, top card, turn, stack size. Broadcast. |
 | `uno:hand` | Your cards and your legal moves. Sent to one socket only. |
-| `uno:over` | `{ winner, winnerName }` |
+| `uno:over` | `{ winner, winnerName, score, target }` |
 | `uno:chat` · `uno:kicked` · `uno:closed` | |
 
 Seats are stable indices. A disconnect marks the seat offline and keeps the
@@ -187,26 +188,27 @@ hand; `uno:reconnect` with the same name picks it back up.
 cd backend && npm test
 ```
 
-31 tests, all passing:
+35 tests, all passing:
 
-- **Engine (27)** — deck composition, card matching, turn order, stacking limits,
-  every special card, the 7-0 rule, elimination at 25, win conditions, draw-pile
-  reshuffling, UNO catches, and that the shared view never leaks a hand. The last
-  is a soak test: 200 randomly played games, asserting every one terminates with
-  a legal winner and that no invariant breaks after any move.
+- **Engine (31)** — deck composition against the sheet's card list, card
+  matching, turn order, stacking limits, every special card, the 7-0 rule,
+  draw-until-playable, elimination at 25, win conditions, draw-pile reshuffling,
+  UNO catches, the optional scoring values, and that the shared view never leaks
+  a hand. The last is a soak test: 300 randomly played games, asserting every one
+  terminates with a legal winner and that no invariant breaks after any move.
 - **Multiplayer (4)** — a real socket.io server and real clients: a full
   four-player game played over the wire, reconnect-and-resume, join/name rules,
   and chat rate limiting.
 
-The client was also driven through a two-browser game with Playwright: create,
-join, deal, play a wild, pick a colour, and confirm the second device updates
-live and the hand survives a reload.
+The client was also driven through a two-browser game with Playwright against
+the built single service: create, join, deal, play a wild, pick a colour, and
+confirm the second device updates live and the hand survives a reload.
 
 ## Notes
 
 - Rooms are held in memory and swept after 3 hours. Running more than one server
   process needs a shared store or sticky sessions — the same constraint the
   Imposter India backend has.
-- 2–10 players. Latecomers wait for the next hand.
+- 2–6 players, as the box states. Latecomers wait for the next hand.
 - `MERCY_LIMIT`, `HAND_SIZE` and `UNO_PENALTY` are constants at the top of
   `engine.js` if you want to tune them.
