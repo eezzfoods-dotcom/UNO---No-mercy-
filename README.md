@@ -26,7 +26,7 @@ dropped somewhere else unchanged.
 │   ├── src/game/roomManager.js      rooms, seats, rejoining
 │   ├── src/routes/socketHandlers.js the uno:* socket API
 │   ├── src/server.js                standalone server (optional)
-│   └── test/                        35 tests
+│   └── test/                        38 tests
 └── frontend/         React client
     ├── src/UnoGame.jsx              ← the one component you mount
     ├── src/context/UnoContext.jsx   socket + game state
@@ -127,7 +127,13 @@ plus these:
 
 7-0 is official, but can be switched off per room from the lobby as a house
 rule. Stacking and the 25-card knockout are always on — they are what makes it
-No Mercy. 2–6 players, as on the box.
+No Mercy.
+
+**Players: 2–20.** The box says 2–6; anything above that is a house rule the
+deck can still take. At 20 players 140 of the 168 cards are dealt, leaving 27
+in the draw pile, and the pile reshuffles from the discard as it empties. Big
+tables get brutal fast — with more hands drawing, the 25-card knockout comes
+round much sooner.
 
 **Deck — 168 cards**
 
@@ -157,7 +163,7 @@ Every call takes an ack callback and answers `{ ok: true, ... }` or
 | Event | Payload | |
 |---|---|---|
 | `uno:create` | `{ name, avatar, cfg }` | Opens a room, returns its code |
-| `uno:join` | `{ code, name, avatar }` | Lobby only |
+| `uno:join` | `{ code, name, avatar }` | Lobby only, up to 20 seats |
 | `uno:reconnect` | `{ code, name }` | Reclaims an existing seat, any time |
 | `uno:config` | `{ cfg }` | Host, lobby only |
 | `uno:kick` | `{ playerIdx }` | Host, lobby only |
@@ -188,17 +194,18 @@ hand; `uno:reconnect` with the same name picks it back up.
 cd backend && npm test
 ```
 
-35 tests, all passing:
+38 tests, all passing:
 
-- **Engine (31)** — deck composition against the sheet's card list, card
+- **Engine (33)** — deck composition against the sheet's card list, card
   matching, turn order, stacking limits, every special card, the 7-0 rule,
   draw-until-playable, elimination at 25, win conditions, draw-pile reshuffling,
   UNO catches, the optional scoring values, and that the shared view never leaks
   a hand. The last is a soak test: 300 randomly played games, asserting every one
   terminates with a legal winner and that no invariant breaks after any move.
-- **Multiplayer (4)** — a real socket.io server and real clients: a full
-  four-player game played over the wire, reconnect-and-resume, join/name rules,
-  and chat rate limiting.
+  Table sizes from 2 to 20 are each dealt and played to a finish.
+- **Multiplayer (5)** — a real socket.io server and real clients: a full
+  four-player game played over the wire, a ten-player room dealt in,
+  reconnect-and-resume, join/name rules, and chat rate limiting.
 
 The client was also driven through a two-browser game with Playwright against
 the built single service: create, join, deal, play a wild, pick a colour, and
@@ -209,6 +216,6 @@ confirm the second device updates live and the hand survives a reload.
 - Rooms are held in memory and swept after 3 hours. Running more than one server
   process needs a shared store or sticky sessions — the same constraint the
   Imposter India backend has.
-- 2–6 players, as the box states. Latecomers wait for the next hand.
+- 2–20 players (the box says 2–6). Latecomers wait for the next hand.
 - `MERCY_LIMIT`, `HAND_SIZE` and `UNO_PENALTY` are constants at the top of
   `engine.js` if you want to tune them.

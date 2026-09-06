@@ -178,13 +178,16 @@ function createGame(players, { rng = Math.random, sevenZero = true } = {}) {
   s.players.forEach((_, i) => drawCards(s, i, HAND_SIZE));
 
   // "Flip over the top card... If this card is an Action Card, ignore it and
-  // flip over the next card."
+  // flip over the next card." Bounded, because on a full table the undealt
+  // remainder can in principle hold no number card at all.
   let starter = s.deck.pop();
-  while (starter.kind !== KIND.NUMBER) {
+  for (let tries = s.deck.length; starter.kind !== KIND.NUMBER && tries > 0; tries--) {
     s.deck.unshift(starter);
     starter = s.deck.pop();
   }
   s.discard.push(starter);
+  // A non-number fallback still needs a colour to match against.
+  if (!starter.color) starter.color = COLORS[Math.floor(rng() * COLORS.length)];
   s.activeColor = starter.color;
   log(s, `Starting card: ${starter.color} ${label(starter)}`);
   return s;

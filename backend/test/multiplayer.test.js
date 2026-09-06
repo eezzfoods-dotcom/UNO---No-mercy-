@@ -222,6 +222,33 @@ test('joining is closed once a hand is dealt, and names are unique per room', as
   assert.match(nowhere.error, /not found/i);
 });
 
+test('a room takes ten players and deals them all in', async (t) => {
+  const srv = await bootServer();
+  const socks = [];
+  t.after(async () => { socks.forEach((s) => s.close()); await srv.close(); });
+
+  const names = Array.from({ length: 10 }, (_, i) => `P${i}`);
+  for (const _ of names) socks.push(await connect(srv.url));
+
+  const { code, ok } = await emit(socks[0], 'uno:create', { name: names[0] });
+  assert.ok(ok);
+  for (let i = 1; i < names.length; i++) {
+    const res = await emit(socks[i], 'uno:join', { code, name: names[i] });
+    assert.ok(res.ok, `${names[i]} could not join: ${res.error}`);
+    assert.strictEqual(res.playerIdx, i);
+  }
+
+  const hands = names.map((_, i) => once(socks[i], 'uno:hand'));
+  const table = once(socks[9], 'uno:table');
+  assert.ok((await emit(socks[0], 'uno:start')).ok);
+
+  const dealt = await Promise.all(hands);
+  dealt.forEach((h, i) => assert.strictEqual(h.hand.length, 7, `${names[i]} was dealt 7`));
+  const t0 = await table;
+  assert.strictEqual(t0.game.players.length, 10);
+  assert.strictEqual(t0.game.deckCount, 168 - 70 - 1, 'the deck adds up at ten players');
+});
+
 test('chat is relayed, trimmed and rate limited', async (t) => {
   const srv = await bootServer();
   const socks = [];

@@ -473,6 +473,62 @@ test('a live stack narrows the private view to draw cards only', () => {
   v.legal.forEach((id) => assert.ok(deck.drawValue(v.hand.find((c) => c.id === id)) >= 10));
 });
 
+// ── big tables ────────────────────────────────────────────
+
+test('the deck deals a full table, and every size plays to a finish', () => {
+  const pick = (rng, arr) => arr[Math.floor(rng() * arr.length)];
+
+  for (const n of [2, 5, 6, 7, 10, 15, 20]) {
+    const rng = seeded(n * 7919 + 1);
+    const players = Array.from({ length: n }, (_, i) => ({ id: String(i), name: `P${i}` }));
+    const s = E.createGame(players, { rng });
+
+    assert.strictEqual(s.players.length, n);
+    s.players.forEach((p) => assert.strictEqual(p.hand.length, E.HAND_SIZE, `${n}: everyone dealt 7`));
+    assert.strictEqual(s.deck.length, 168 - n * E.HAND_SIZE - 1, `${n}: deck accounted for`);
+    assert.ok(s.activeColor, `${n}: the starting card has a colour`);
+
+    for (let turn = 0; turn < 20000 && s.status === 'playing'; turn++) {
+      const me = s.turn;
+      const view = E.privateView(s, me);
+      let res;
+      if (view.chooseRouletteColor) {
+        res = E.chooseColor(s, me, pick(rng, deck.COLORS));
+      } else if (view.legal.length > 0) {
+        const others = E.activeIdxs(s).filter((i) => i !== me);
+        res = E.playCard(s, me, pick(rng, view.legal),
+          { color: pick(rng, deck.COLORS), targetIdx: pick(rng, others) });
+      } else if (view.canDraw) {
+        res = E.draw(s, me);
+      } else {
+        assert.fail(`${n} players: seat ${me} had no legal action`);
+      }
+      assert.ok(res.ok, `${n} players: rejected an advertised move (${res.error})`);
+    }
+
+    assert.strictEqual(s.status, 'ended', `${n} players never finished`);
+    assert.ok(s.winner !== null && !s.players[s.winner].eliminated, `${n} players: bad winner`);
+  }
+});
+
+test('a 0 rotates every hand correctly on a big table', () => {
+  const n = 12;
+  const players = Array.from({ length: n }, (_, i) => ({ id: String(i), name: `P${i}` }));
+  const s = E.createGame(players, { rng: seeded(21) });
+  setTop(s, { kind: KIND.NUMBER, color: 'red', value: 3 });
+  s.players.forEach((p, i) => { p.hand = [{ id: `h${i}`, kind: KIND.NUMBER, color: 'blue', value: 1 }]; });
+  s.players[0].hand = [{ id: 'z0', kind: KIND.NUMBER, color: 'red', value: 0 },
+                       { id: 'h0', kind: KIND.NUMBER, color: 'blue', value: 1 }];
+  s.turn = 0;
+  s.dir = 1;
+
+  assert.ok(E.playCard(s, 0, 'z0').ok);
+  for (let i = 1; i < n; i++) {
+    assert.deepStrictEqual(s.players[i].hand.map((c) => c.id), [`h${i - 1}`], `seat ${i} took seat ${i - 1}'s hand`);
+  }
+  assert.deepStrictEqual(s.players[0].hand.map((c) => c.id), [`h${n - 1}`], 'and the last wraps round');
+});
+
 // ── soak ──────────────────────────────────────────────────
 
 test('300 random games always terminate with a legal winner', () => {

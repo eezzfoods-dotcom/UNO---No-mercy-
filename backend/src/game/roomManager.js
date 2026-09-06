@@ -9,7 +9,7 @@ const engine = require('./engine');
 const rooms = new Map();
 
 const MIN_PLAYERS = 2;
-const MAX_PLAYERS = 6;   // the box says 2-6
+const MAX_PLAYERS = 20;  // the box says 2-6; more is a house rule the deck can take
 const ROOM_TTL_MS = 3 * 60 * 60 * 1000;   // 3 hours, same as Imposter
 const SWEEP_MS = 30 * 60 * 1000;
 
