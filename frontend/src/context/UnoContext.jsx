@@ -4,12 +4,23 @@ import { io } from 'socket.io-client';
 // One socket for the whole game. In the Semma app you can hand in the app's
 // existing socket instead — see `socket` on the provider props.
 //
-// Undefined means "same origin", which is what a single deployed service wants.
-// Set VITE_UNO_BACKEND_URL when the client and server run on separate hosts
-// (including local dev, where Vite is on 5174 and the server on 3002).
-const DEFAULT_URL = import.meta.env.VITE_UNO_BACKEND_URL
-  || import.meta.env.VITE_BACKEND_URL
-  || undefined;
+// In a deployed build the server serves this page, so same origin (undefined)
+// is right. Under `vite dev` the page comes from Vite's port and the game
+// server is elsewhere, so fall back to :3002 on the same host — that keeps
+// `npm run dev:client` working with no config, and works from a phone on the
+// same network too. VITE_UNO_BACKEND_URL overrides both.
+const DEV_SERVER_PORT = 3002;
+
+function defaultUrl() {
+  const explicit = import.meta.env.VITE_UNO_BACKEND_URL || import.meta.env.VITE_BACKEND_URL;
+  if (explicit) return explicit;
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
+    return `${window.location.protocol}//${window.location.hostname}:${DEV_SERVER_PORT}`;
+  }
+  return undefined;   // same origin
+}
+
+const DEFAULT_URL = defaultUrl();
 
 const UnoContext = createContext(null);
 export const useUno = () => useContext(UnoContext);
@@ -38,6 +49,8 @@ export function UnoProvider({ children, socket: injected, url = DEFAULT_URL }) {
   const socket = socketRef.current;
 
   const [connected, setConnected] = useState(socket.connected);
+  // Where we are dialling, so a failure can say so rather than hanging silently.
+  const serverUrl = injected ? 'the app\'s own socket' : (url || 'this page\'s origin');
   const [screen, setScreen] = useState('home');   // home | lobby | table | over
   const [table, setTable] = useState(null);        // shared view
   const [hand, setHand] = useState(null);          // this player's cards
@@ -115,7 +128,7 @@ export function UnoProvider({ children, socket: injected, url = DEFAULT_URL }) {
   }, [send]);
 
   const api = useMemo(() => ({
-    socket, connected, screen, table, hand, seat, chat, error, result,
+    socket, connected, serverUrl, screen, table, hand, seat, chat, error, result,
     setError, setScreen,
 
     createRoom: (name, avatar, cfg) => enter('uno:create', { name, avatar, cfg }),
@@ -146,7 +159,7 @@ export function UnoProvider({ children, socket: injected, url = DEFAULT_URL }) {
     isHost: seat === 0,
     me: table && seat !== null ? table.seats[seat] : null,
     game: table?.game || null,
-  }), [socket, connected, screen, table, hand, seat, chat, error, result, enter, send]);
+  }), [socket, connected, serverUrl, screen, table, hand, seat, chat, error, result, enter, send]);
 
   return <UnoContext.Provider value={api}>{children}</UnoContext.Provider>;
 }

@@ -5,7 +5,7 @@ import { Screen, Btn, Field, ACCENT } from '../components/ui';
 const AVATARS = ['🃏', '🔥', '👑', '🐯', '🚀', '🦁', '⚡', '🎯', '🍿', '💀'];
 
 export default function Home({ onExit }) {
-  const { createRoom, joinRoom, connected } = useUno();
+  const { createRoom, joinRoom, connected, serverUrl } = useUno();
   const [mode, setMode] = useState(null);     // null | 'create' | 'join'
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
@@ -44,8 +44,12 @@ export default function Home({ onExit }) {
             <Btn variant="ghost" onClick={() => setMode('join')} disabled={!connected}>Join with a code</Btn>
             {onExit && <Btn variant="ghost" onClick={onExit}>Back to games</Btn>}
             {!connected && (
-              <p style={{ textAlign: 'center', fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 6 }}>
-                Connecting to the server…
+              <p style={{ textAlign: 'center', fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 6, lineHeight: 1.5 }}>
+                Connecting to {serverUrl}…
+                <br />
+                <span style={{ color: 'rgba(255,255,255,0.25)' }}>
+                  If this does not clear, the game server is not running there.
+                </span>
               </p>
             )}
           </div>

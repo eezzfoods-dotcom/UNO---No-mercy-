@@ -69,8 +69,9 @@ npm run dev:server                            # :3002
 npm run dev:client                            # :5174
 ```
 
-For the split setup, point the client at the server by putting
-`VITE_UNO_BACKEND_URL=http://localhost:3002` in `frontend/.env`.
+The split setup needs no configuration: under `vite dev` the client dials
+port 3002 on the same host automatically. Set `VITE_UNO_BACKEND_URL` only when
+the server lives somewhere else.
 
 Open the URL in two browsers, create a room in one, join with the 4-letter
 code in the other.
